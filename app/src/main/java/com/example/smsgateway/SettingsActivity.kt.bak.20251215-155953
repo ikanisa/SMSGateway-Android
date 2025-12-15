@@ -1,0 +1,189 @@
+package com.example.smsgateway
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
+
+class SettingsActivity : AppCompatActivity() {
+
+    private lateinit var prefs: SharedPreferences
+
+    private lateinit var etSupabaseUrl: TextInputEditText
+    private lateinit var etSupabaseKey: TextInputEditText
+    private lateinit var etDeviceId: TextInputEditText
+    private lateinit var etDeviceSecret: TextInputEditText
+    private lateinit var etDeviceLabel: TextInputEditText
+    private lateinit var etMomoNumber: TextInputEditText
+    private lateinit var etMomoCode: TextInputEditText
+
+    private lateinit var tvSmsPermStatus: TextView
+    private lateinit var tvNotifPermStatus: TextView
+    private lateinit var tvBatteryStatus: TextView
+
+    companion object {
+        private const val PREFS_NAME = "SMSGatewayPrefs"
+        private const val KEY_SUPABASE_URL = "supabase_url"
+        private const val KEY_SUPABASE_KEY = "supabase_key"
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_DEVICE_SECRET = "device_secret"
+        private const val KEY_DEVICE_LABEL = "device_label"
+        private const val KEY_MOMO_MSISDN = "momo_msisdn"
+        private const val KEY_MOMO_CODE = "momo_code"
+    }
+
+    private val smsPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        updateStatusRows()
+    }
+
+    private val notifPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        updateStatusRows()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
+
+        findViewById<MaterialToolbar>(R.id.toolbarSettings).setNavigationOnClickListener { finish() }
+
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+        etSupabaseUrl = findViewById(R.id.etSupabaseUrl)
+        etSupabaseKey = findViewById(R.id.etSupabaseKey)
+        etDeviceId = findViewById(R.id.etDeviceId)
+        etDeviceSecret = findViewById(R.id.etDeviceSecret)
+        etDeviceLabel = findViewById(R.id.etDeviceLabel)
+        etMomoNumber = findViewById(R.id.etMomoNumber)
+        etMomoCode = findViewById(R.id.etMomoCode)
+
+        tvSmsPermStatus = findViewById(R.id.tvSmsPermStatus)
+        tvNotifPermStatus = findViewById(R.id.tvNotifPermStatus)
+        tvBatteryStatus = findViewById(R.id.tvBatteryStatus)
+
+        // Prefill from saved prefs; if empty, use defaults to avoid typing on phone
+        etSupabaseUrl.setText(prefs.getString(KEY_SUPABASE_URL, AppDefaults.SUPABASE_URL))
+        etSupabaseKey.setText(prefs.getString(KEY_SUPABASE_KEY, AppDefaults.SUPABASE_ANON_KEY))
+        etDeviceId.setText(prefs.getString(KEY_DEVICE_ID, AppDefaults.DEVICE_ID))
+        etDeviceSecret.setText(prefs.getString(KEY_DEVICE_SECRET, AppDefaults.DEVICE_SECRET))
+        etDeviceLabel.setText(prefs.getString(KEY_DEVICE_LABEL, AppDefaults.DEVICE_LABEL))
+        etMomoNumber.setText(prefs.getString(KEY_MOMO_MSISDN, ""))
+        etMomoCode.setText(prefs.getString(KEY_MOMO_CODE, ""))
+
+        findViewById<MaterialButton>(R.id.btnSave).setOnClickListener { saveConfig() }
+        findViewById<MaterialButton>(R.id.btnGrantSms).setOnClickListener { requestSmsPermissions() }
+        findViewById<MaterialButton>(R.id.btnGrantNotif).setOnClickListener { requestNotificationPermission() }
+        findViewById<MaterialButton>(R.id.btnBattery).setOnClickListener { requestBatteryOptimization() }
+
+        updateStatusRows()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateStatusRows()
+    }
+
+    private fun saveConfig() {
+        val supaUrl = etSupabaseUrl.text?.toString()?.trim().orEmpty()
+        val supaKey = etSupabaseKey.text?.toString()?.trim().orEmpty()
+        val devId = etDeviceId.text?.toString()?.trim().orEmpty()
+        val devSecret = etDeviceSecret.text?.toString()?.trim().orEmpty()
+        val devLabel = etDeviceLabel.text?.toString()?.trim().orEmpty()
+        val momoMsisdn = etMomoNumber.text?.toString()?.trim().orEmpty()
+        val momoCode = etMomoCode.text?.toString()?.trim().orEmpty()
+
+        if (supaUrl.isEmpty() || supaKey.isEmpty() || devId.isEmpty() || devSecret.isEmpty()) {
+            Toast.makeText(this, "Fill Supabase + Device fields", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        prefs.edit()
+            .putString(KEY_SUPABASE_URL, supaUrl)
+            .putString(KEY_SUPABASE_KEY, supaKey)
+            .putString(KEY_DEVICE_ID, devId)
+            .putString(KEY_DEVICE_SECRET, devSecret)
+            .putString(KEY_DEVICE_LABEL, devLabel)
+            .putString(KEY_MOMO_MSISDN, momoMsisdn)
+            .putString(KEY_MOMO_CODE, momoCode)
+            .apply()
+
+        Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    private fun hasSmsPermissions(): Boolean {
+        val rcv = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+        val read = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        return rcv && read
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else true
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(packageName)
+        } else true
+    }
+
+    private fun updateStatusRows() {
+        tvSmsPermStatus.text = if (hasSmsPermissions()) "Granted" else "Not granted"
+        tvNotifPermStatus.text = if (hasNotificationPermission()) "Enabled" else "Disabled"
+        tvBatteryStatus.text = if (isIgnoringBatteryOptimizations()) "Optimizations disabled (good)" else "Optimizations ON (bad)"
+    }
+
+    private fun requestSmsPermissions() {
+        smsPermLauncher.launch(arrayOf(
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS
+        ))
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // Nothing to request on older versions
+            Toast.makeText(this, "Notifications are allowed on this Android version", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            try {
+                startActivity(intent)
+            } catch (_: Exception) {
+                val settingsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(settingsIntent)
+            }
+        } else {
+            Toast.makeText(this, "Battery optimization settings not available on this Android version", Toast.LENGTH_SHORT).show()
+        }
+    }
+}

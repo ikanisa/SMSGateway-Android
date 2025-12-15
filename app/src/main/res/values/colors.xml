@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Neutral, production-looking palette (no default purple) -->
+    <color name="brand_primary">#2563EB</color>
+    <color name="brand_on_primary">#FFFFFF</color>
+
+    <color name="brand_primary_container">#DBEAFE</color>
+    <color name="brand_on_primary_container">#1E3A8A</color>
+
+    <color name="brand_secondary">#0F172A</color>
+    <color name="brand_on_secondary">#FFFFFF</color>
+
+    <color name="brand_secondary_container">#E2E8F0</color>
+    <color name="brand_on_secondary_container">#0F172A</color>
+</resources>

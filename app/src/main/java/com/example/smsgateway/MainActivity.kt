@@ -1,0 +1,172 @@
+package com.example.smsgateway
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.card.MaterialCardView
+
+class MainActivity : AppCompatActivity() {
+
+    private val viewModel: MainViewModel by viewModels()
+
+    private lateinit var tvLogs: TextView
+    private lateinit var tvSmsCount: TextView
+    private lateinit var tvErrorCount: TextView
+    private lateinit var tvStatus: TextView
+    private lateinit var statusIndicator: MaterialCardView
+    private lateinit var toolbar: MaterialToolbar
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.all { it.value }
+        if (allGranted) {
+            viewModel.setListening(true)
+            viewModel.appendLog("SMS permissions granted - App is listening")
+        } else {
+            viewModel.setListening(false)
+            viewModel.appendLog("SMS permissions denied - App cannot receive SMS")
+            showPermissionDialog()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
+        initViews()
+        setupObservers()
+        checkAndRequestPermissions()
+
+        // Set ViewModel reference for Worker logs
+        ProcessSmsWorker.setViewModel(viewModel)
+
+        // Config sanity check (so "Listening" doesn't hide misconfiguration)
+        val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
+        val supaUrl = prefs.getString("supabase_url", "").orEmpty().trim()
+        val supaKey = prefs.getString("supabase_key", "").orEmpty().trim()
+        val devId = prefs.getString("device_id", "").orEmpty().trim()
+        val devSecret = prefs.getString("device_secret", "").orEmpty().trim()
+        if (supaUrl.isEmpty() || supaKey.isEmpty() || devId.isEmpty() || devSecret.isEmpty()) {
+            viewModel.appendLog("⚠️ Not configured: open Settings and enter Supabase URL + Anon Key + Device ID + Device Secret")
+        } else {
+            viewModel.appendLog("✅ Provisioned: ready to forward SMS to Edge Function")
+        }
+    }
+
+    private fun initViews() {
+        toolbar = findViewById(R.id.toolbar)
+        tvLogs = findViewById(R.id.tvLogs)
+        tvSmsCount = findViewById(R.id.tvSmsCount)
+        tvErrorCount = findViewById(R.id.tvErrorCount)
+        tvStatus = findViewById(R.id.tvStatus)
+        statusIndicator = findViewById(R.id.statusIndicator)
+
+        toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_settings -> {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun setupObservers() {
+        viewModel.logs.observe(this) { logs ->
+            tvLogs.text = logs
+        }
+
+        viewModel.smsCount.observe(this) { count ->
+            tvSmsCount.text = count.toString()
+        }
+
+        viewModel.errorCount.observe(this) { count ->
+            tvErrorCount.text = count.toString()
+        }
+
+        viewModel.isListening.observe(this) { isListening ->
+            if (isListening) {
+                tvStatus.text = "Listening"
+                statusIndicator.setCardBackgroundColor(
+                    ContextCompat.getColor(this, android.R.color.holo_green_dark)
+                )
+            } else {
+                tvStatus.text = "Stopped"
+                statusIndicator.setCardBackgroundColor(
+                    ContextCompat.getColor(this, android.R.color.holo_red_dark)
+                )
+            }
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val permissions = mutableListOf<String>()
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissions.add(Manifest.permission.RECEIVE_SMS)
+            }
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissions.add(Manifest.permission.READ_SMS)
+            }
+
+            if (permissions.isNotEmpty()) {
+                requestPermissionLauncher.launch(permissions.toTypedArray())
+            } else {
+                viewModel.setListening(true)
+                viewModel.appendLog("SMS permissions already granted - App is listening")
+            }
+        } else {
+            viewModel.setListening(true)
+            viewModel.appendLog("App is listening (Android < 6.0)")
+        }
+    }
+
+    private fun showPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Permissions required")
+            .setMessage("SMS permissions are required for this app to function. Please grant permissions in Settings.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val hasPermissions =
+                ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) ==
+                        PackageManager.PERMISSION_GRANTED &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) ==
+                        PackageManager.PERMISSION_GRANTED
+
+            viewModel.setListening(hasPermissions)
+        }
+    }
+}
