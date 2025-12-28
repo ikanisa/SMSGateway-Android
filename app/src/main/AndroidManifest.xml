@@ -18,7 +18,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SMSGateway">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.smsgateway.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -28,12 +28,12 @@
         </activity>
 
         <activity
-            android:name=".SettingsActivity"
+            android:name="com.example.smsgateway.SettingsActivity"
             android:exported="false"
-            android:parentActivityName=".MainActivity" />
+            android:parentActivityName="com.example.smsgateway.MainActivity" />
 
         <receiver
-            android:name=".SmsReceiver"
+            android:name="com.example.smsgateway.SmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>

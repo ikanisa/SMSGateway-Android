@@ -13,23 +13,21 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.example.smsgateway.ui.screens.HomeScreen
 import com.example.smsgateway.ui.screens.SettingsScreen
-import com.example.smsgateway.ui.screens.Tuple5
 import com.example.smsgateway.ui.theme.SMSGatewayTheme
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+
+    private var permissionCallback: ((Boolean) -> Unit)? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -42,6 +40,8 @@ class MainActivity : ComponentActivity() {
             viewModel.setListening(false)
             viewModel.appendLog("SMS permissions denied - App cannot receive SMS")
         }
+        permissionCallback?.invoke(allGranted)
+        permissionCallback = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,16 +51,13 @@ class MainActivity : ComponentActivity() {
         // Set ViewModel reference for Worker logs
         ProcessSmsWorker.setViewModel(viewModel)
 
-        // Config sanity check
-        val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-        val supaUrl = prefs.getString("supabase_url", "").orEmpty().trim()
-        val supaKey = prefs.getString("supabase_key", "").orEmpty().trim()
-        val devId = prefs.getString("device_id", "").orEmpty().trim()
-        val devSecret = prefs.getString("device_secret", "").orEmpty().trim()
-        if (supaUrl.isEmpty() || supaKey.isEmpty() || devId.isEmpty() || devSecret.isEmpty()) {
-            viewModel.appendLog("⚠️ Not configured: open Settings and enter Supabase URL + Anon Key + Device ID + Device Secret")
+        // Check if device is provisioned
+        val deviceLookupHelper = DeviceLookupHelper(this)
+        if (deviceLookupHelper.isProvisioned()) {
+            val deviceInfo = deviceLookupHelper.getStoredDeviceInfo()
+            viewModel.appendLog("✅ Device provisioned: ${deviceInfo?.deviceLabel ?: "Unknown"}")
         } else {
-            viewModel.appendLog("✅ Provisioned: ready to forward SMS to Edge Function")
+            viewModel.appendLog("⚠️ Device not configured: Enter your MoMo number in Settings")
         }
 
         checkAndRequestPermissions()
@@ -102,52 +99,8 @@ class MainActivity : ComponentActivity() {
                             onNavigateBack = {
                                 navController.popBackStack()
                             },
-                            onSaveGateway = { url, key, id, secret, label ->
-                                saveGatewayCredentials(url, key, id, secret, label)
-                            },
-                            onSaveMoMo = { number, code ->
-                                saveMoMoCredentials(number, code)
-                            },
-                            getGatewayState = {
-                                val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                                val supaUrl = prefs.getString("supabase_url", "").orEmpty().trim()
-                                val supaKey = prefs.getString("supabase_key", "").orEmpty().trim()
-                                val devId = prefs.getString("device_id", "").orEmpty().trim()
-                                val devSecret = prefs.getString("device_secret", "").orEmpty().trim()
-                                val isConf = supaUrl.isNotEmpty() && supaKey.isNotEmpty() && devId.isNotEmpty() && devSecret.isNotEmpty()
-                                val status = if (isConf) "Configured ✅" else "Not configured ⚠️"
-                                Pair(status, isConf)
-                            },
-                            getMoMoState = {
-                                val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                                val momo = prefs.getString("momo_msisdn", "").orEmpty().trim()
-                                val momoCode = prefs.getString("momo_code", "").orEmpty().trim()
-                                when {
-                                    momo.isNotEmpty() && momoCode.isNotEmpty() -> "MoMo: $momo (code: $momoCode)"
-                                    momo.isNotEmpty() -> "MoMo: $momo"
-                                    momoCode.isNotEmpty() -> "MoMo code: $momoCode"
-                                    else -> "Not set"
-                                }
-                            },
-                            getGatewayCredentials = {
-                                val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                                Tuple5(
-                                    prefs.getString("supabase_url", "") ?: "",
-                                    prefs.getString("supabase_key", "") ?: "",
-                                    prefs.getString("device_id", "") ?: "",
-                                    prefs.getString("device_secret", "") ?: "",
-                                    prefs.getString("device_label", "") ?: ""
-                                )
-                            },
-                            getMoMoCredentials = {
-                                val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                                Pair(
-                                    prefs.getString("momo_msisdn", "") ?: "",
-                                    prefs.getString("momo_code", "") ?: ""
-                                )
-                            },
                             requestSmsPermissions = { callback ->
-                                requestSmsPerms { callback(it) }
+                                requestSmsPerms(callback)
                             },
                             checkSmsPermissions = {
                                 checkSmsPerms()
@@ -190,9 +143,8 @@ class MainActivity : ComponentActivity() {
     private fun requestSmsPerms(callback: (Boolean) -> Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val permissions = arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-                callback(result.all { it.value })
-            }.launch(permissions)
+            permissionCallback = callback
+            requestPermissionLauncher.launch(permissions)
         } else {
             callback(true)
         }
@@ -202,25 +154,6 @@ class MainActivity : ComponentActivity() {
         val rcv = ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
         val read = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
         return rcv && read
-    }
-
-    private fun saveGatewayCredentials(url: String, key: String, id: String, secret: String, label: String) {
-        val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString("supabase_url", url)
-            .putString("supabase_key", key)
-            .putString("device_id", id)
-            .putString("device_secret", secret)
-            .putString("device_label", label)
-            .apply()
-    }
-
-    private fun saveMoMoCredentials(number: String, code: String) {
-        val prefs = getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString("momo_msisdn", number)
-            .putString("momo_code", code)
-            .apply()
     }
 
     override fun onResume() {
@@ -233,10 +166,8 @@ class MainActivity : ComponentActivity() {
 
     private fun isConfiguredCheck(context: Context): Boolean {
         val prefs = context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-        val supaUrl = prefs.getString("supabase_url", "").orEmpty().trim()
-        val supaKey = prefs.getString("supabase_key", "").orEmpty().trim()
         val devId = prefs.getString("device_id", "").orEmpty().trim()
         val devSecret = prefs.getString("device_secret", "").orEmpty().trim()
-        return supaUrl.isNotEmpty() && supaKey.isNotEmpty() && devId.isNotEmpty() && devSecret.isNotEmpty()
+        return devId.isNotEmpty() && devSecret.isNotEmpty()
     }
 }

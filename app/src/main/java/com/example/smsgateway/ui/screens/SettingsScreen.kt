@@ -1,33 +1,34 @@
 package com.example.smsgateway.ui.screens
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,12 +37,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import com.example.smsgateway.DeviceLookupHelper
 import com.example.smsgateway.MainViewModel
-import com.example.smsgateway.ui.components.GatewayCredentialsSheet
-import com.example.smsgateway.ui.components.MoMoIdentitySheet
 import com.example.smsgateway.ui.components.SettingsCard
 import kotlinx.coroutines.launch
 
@@ -50,29 +50,33 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     viewModel: MainViewModel,
     onNavigateBack: () -> Unit,
-    onSaveGateway: (url: String, key: String, id: String, secret: String, label: String) -> Unit,
-    onSaveMoMo: (number: String, code: String) -> Unit,
-    getGatewayState: () -> Pair<String, Boolean>,
-    getMoMoState: () -> String,
-    getGatewayCredentials: () -> Tuple5<String, String, String, String, String>,
-    getMoMoCredentials: () -> Pair<String, String>,
     requestSmsPermissions: (callback: (Boolean) -> Unit) -> Unit,
     checkSmsPermissions: () -> Boolean
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-
-    val gatewaySheetState = rememberModalBottomSheetState()
-    val momoSheetState = rememberModalBottomSheetState()
-
-    var showGatewaySheet by remember { mutableStateOf(false) }
-    var showMoMoSheet by remember { mutableStateOf(false) }
-
-    val (gatewayStatus, isConfigured) = getGatewayState()
-    val momoStatus = getMoMoState()
-    val (url, key, id, secret, label) = getGatewayCredentials()
-    val (momoNum, momoCode) = getMoMoCredentials()
+    
+    val deviceLookupHelper = remember { DeviceLookupHelper(context) }
+    
+    // State for MoMo input
+    var momoNumber by remember { 
+        mutableStateOf(
+            context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
+                .getString("momo_msisdn", "") ?: ""
+        ) 
+    }
+    var momoCode by remember { 
+        mutableStateOf(
+            context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
+                .getString("momo_code", "") ?: ""
+        ) 
+    }
+    var isLoading by remember { mutableStateOf(false) }
+    var isProvisioned by remember { mutableStateOf(deviceLookupHelper.isProvisioned()) }
+    var deviceLabel by remember { 
+        mutableStateOf(deviceLookupHelper.getStoredDeviceInfo()?.deviceLabel ?: "") 
+    }
 
     Scaffold(
         topBar = {
@@ -108,41 +112,88 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp)
                 .padding(vertical = 16.dp)
         ) {
-            // Gateway Card
-            SettingsCard(
-                title = "Gateway",
-                subtitle = gatewayStatus,
-                modifier = Modifier.padding(bottom = 16.dp)
-            ) {
-                Text(
-                    text = "Credentials are stored on-device and not displayed here",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-                Button(
-                    onClick = { showGatewaySheet = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    Text("Edit Credentials")
-                }
-            }
-
-            // MoMo Identity Card
+            // MoMo Identity Card - Main configuration
             SettingsCard(
                 title = "MoMo Identity",
-                subtitle = momoStatus,
+                subtitle = if (isProvisioned) "Registered ✅" else "Enter your MoMo number to activate",
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                Button(
-                    onClick = { showMoMoSheet = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp)
-                ) {
-                    Text("Edit MoMo Identity")
+                Column(modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(
+                        value = momoNumber,
+                        onValueChange = { momoNumber = it },
+                        label = { Text("MoMo Phone Number") },
+                        placeholder = { Text("e.g., 0788767816") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    OutlinedTextField(
+                        value = momoCode,
+                        onValueChange = { momoCode = it },
+                        label = { Text("MoMo Code (optional)") },
+                        placeholder = { Text("Your identifier") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    if (isProvisioned && deviceLabel.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Device: $deviceLabel",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = {
+                            if (momoNumber.isBlank()) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Please enter your MoMo number")
+                                }
+                                return@Button
+                            }
+                            
+                            isLoading = true
+                            scope.launch {
+                                val result = deviceLookupHelper.lookupAndSaveDevice(
+                                    momoMsisdn = momoNumber.trim(),
+                                    momoCode = momoCode.trim()
+                                )
+                                
+                                isLoading = false
+                                
+                                when (result) {
+                                    is DeviceLookupHelper.LookupResult.Success -> {
+                                        isProvisioned = true
+                                        deviceLabel = result.deviceInfo.deviceLabel
+                                        viewModel.appendLog("✅ Device activated: ${result.deviceInfo.deviceLabel}")
+                                        snackbarHostState.showSnackbar("Device activated successfully!")
+                                    }
+                                    is DeviceLookupHelper.LookupResult.Error -> {
+                                        viewModel.appendLog("❌ Activation failed: ${result.message}")
+                                        snackbarHostState.showSnackbar(result.message)
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isLoading && momoNumber.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 8.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                        Text(if (isProvisioned) "Update" else "Activate Device")
+                    }
                 }
             }
 
@@ -174,7 +225,7 @@ fun SettingsScreen(
                         Text(
                             text = if (hasSmsPerms) "Granted" else "Not granted",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (hasSmsPerms) androidx.compose.ui.graphics.Color(0xFF4CAF50) else androidx.compose.ui.graphics.Color(0xFFFF9800)
+                            color = if (hasSmsPerms) Color(0xFF4CAF50) else Color(0xFFFF9800)
                         )
                     }
                     Button(
@@ -258,52 +309,6 @@ fun SettingsScreen(
             }
         }
     }
-
-    // Bottom Sheets
-    GatewayCredentialsSheet(
-        sheetState = gatewaySheetState,
-        isVisible = showGatewaySheet,
-        supabaseUrl = url,
-        supabaseKey = key,
-        deviceId = id,
-        deviceSecret = secret,
-        deviceLabel = label,
-        onSave = { newUrl, newKey, newId, newSecret, newLabel ->
-            onSaveGateway(newUrl, newKey, newId, newSecret, newLabel)
-            scope.launch {
-                snackbarHostState.showSnackbar("Credentials saved")
-                showGatewaySheet = false
-                gatewaySheetState.hide()
-            }
-        },
-        onDismiss = {
-            scope.launch {
-                showGatewaySheet = false
-                gatewaySheetState.hide()
-            }
-        }
-    )
-
-    MoMoIdentitySheet(
-        sheetState = momoSheetState,
-        isVisible = showMoMoSheet,
-        momoNumber = momoNum,
-        momoCode = momoCode,
-        onSave = { newNum, newCode ->
-            onSaveMoMo(newNum, newCode)
-            scope.launch {
-                snackbarHostState.showSnackbar("MoMo identity saved")
-                showMoMoSheet = false
-                momoSheetState.hide()
-            }
-        },
-        onDismiss = {
-            scope.launch {
-                showMoMoSheet = false
-                momoSheetState.hide()
-            }
-        }
-    )
 }
 
 private fun openNotificationSettings(context: Context) {
@@ -334,13 +339,4 @@ private fun requestBatteryOptimization(context: Context) {
             context.startActivity(settingsIntent)
         }
     }
-}
-
-// Helper data class for tuple
-data class Tuple5<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E) {
-    operator fun component1() = a
-    operator fun component2() = b
-    operator fun component3() = c
-    operator fun component4() = d
-    operator fun component5() = e
 }
