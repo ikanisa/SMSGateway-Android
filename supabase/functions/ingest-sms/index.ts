@@ -2,15 +2,11 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type IngestRequest = {
-  device_id: string;
-  device_secret: string;
+  momo_code: string;
   sender?: string | null;
   body: string;
-  received_at?: string | null; // ISO string preferred
+  received_at?: string | null; // ISO string
   sim_slot?: number | null;
-  device_label?: string | null;
-  raw?: unknown;
-  meta?: unknown;
 };
 
 const corsHeaders = {
@@ -55,12 +51,48 @@ function safeString(v: unknown): string | null {
   return null;
 }
 
+// Telco sender allowlist (must match Android app)
+const TELCO_SENDER_ALLOWLIST = [
+  "MTN",
+  "MTN MoMo",
+  "MOMO",
+  "MTNMobileMoney",
+  "MTN Mobile Money",
+  "100",
+  "456",
+  "MTN-100",
+  "MTN-456",
+];
+
+// MTN MoMo body patterns (regex - must match Android app)
+const MTN_MOMO_BODY_PATTERNS = [
+  /.*(?:received|credit|deposit).*\d+.*(?:UGX|USD|RWF|KES|TZS).*/i,
+  /.*(?:sent|paid|transfer|withdraw).*\d+.*(?:UGX|USD|RWF|KES|TZS).*/i,
+  /.*(?:balance|bal).*\d+.*(?:UGX|USD|RWF|KES|TZS).*/i,
+  /.*(?:payment|paid|transaction).*(?:successful|completed|confirmed).*/i,
+  /.*\d+.*(?:UGX|USD|RWF|KES|TZS).*/i,
+];
+
+function isAllowedSender(sender: string | null | undefined): boolean {
+  if (!sender) return false;
+  const normalized = sender.trim();
+  return TELCO_SENDER_ALLOWLIST.some(
+    (allowed) =>
+      normalized.toLowerCase() === allowed.toLowerCase() ||
+      normalized.toLowerCase().includes(allowed.toLowerCase())
+  );
+}
+
+function matchesMomoPattern(body: string): boolean {
+  const normalized = body.trim();
+  if (!normalized) return false;
+  return MTN_MOMO_BODY_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 // Rwanda (Africa/Kigali) is UTC+02:00, no DST.
-// Convert "YYYY-MM-DD HH:MM:SS" (or with "T") into ISO with +02:00.
 function parseKigaliTimestampToISO(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const s = raw.trim();
-  // already ISO-ish
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s)) return s;
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (!m) return null;
@@ -84,20 +116,14 @@ async function callGeminiOnce(args: { model: string; sender?: string | null; bod
       amount: { type: "number" },
       currency: { type: "string" },
       balance: { type: "number" },
-
       counterparty: { type: "string" },
       counterparty_phone_suffix: { type: "string", description: "Last digits if masked e.g. 235 from (*****235)" },
-
       reference: { type: "string" },
-
       txn_id: { type: "string", description: "Transaction ID if present (TxnId/TransId/etc)" },
       ft_id: { type: "string", description: "FT Id if present (e.g. 'FT Id: 2422...')" },
-
       fee: { type: "number" },
       fee_currency: { type: "string" },
-
       transaction_time_raw: { type: "string", description: "Timestamp text from SMS if present" },
-
       wallet: { type: "string" },
       confidence: { type: "number" },
       notes: { type: "string" },
@@ -181,81 +207,117 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => null)) as IngestRequest | null;
     if (!body) return jsonResponse(400, { error: "Invalid JSON body" });
 
-    const device_id = (body.device_id ?? "").trim();
-    const device_secret = (body.device_secret ?? "").trim();
-    const smsBody = (body.body ?? "").toString();
+    const momoCode = (body.momo_code ?? "").trim();
+    const sender = safeString(body.sender);
+    const smsBody = (body.body ?? "").toString().trim();
 
-    if (!device_id || !device_secret) return jsonResponse(401, { error: "Missing device_id/device_secret" });
+    // Validation
+    if (!momoCode) return jsonResponse(400, { error: "Missing momo_code" });
     if (!smsBody) return jsonResponse(400, { error: "Missing SMS body" });
+
+    // Filter 1: Check sender is in allowlist
+    if (!isAllowedSender(sender)) {
+      // Log unknown sender for review (optional - could insert to unknown_senders table)
+      return jsonResponse(200, {
+        ok: true,
+        skipped: true,
+        reason: "sender_not_in_allowlist",
+        sender: sender ?? "null",
+      });
+    }
+
+    // Filter 2: Check body matches MTN MoMo patterns
+    if (!matchesMomoPattern(smsBody)) {
+      return jsonResponse(200, {
+        ok: true,
+        skipped: true,
+        reason: "body_pattern_not_matched",
+      });
+    }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    if (!supabaseUrl || !serviceKey) return jsonResponse(500, { error: "Missing default Supabase secrets in runtime" });
+    if (!supabaseUrl || !serviceKey) {
+      return jsonResponse(500, { error: "Missing Supabase secrets" });
+    }
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Device auth
-    const { data: dev, error: devErr } = await supabase
-      .from("device_keys")
-      .select("device_id, device_label, secret_hash, enabled")
-      .eq("device_id", device_id)
+    // Check momo_code exists and is active
+    const { data: device, error: devErr } = await supabase
+      .from("devices")
+      .select("momo_code, device_label, enabled")
+      .eq("momo_code", momoCode)
       .single();
 
-    if (devErr || !dev) return jsonResponse(401, { error: "Unknown device_id" });
-    if (!dev.enabled) return jsonResponse(401, { error: "Device disabled" });
+    if (devErr || !device) {
+      return jsonResponse(401, { error: "Unknown or invalid momo_code" });
+    }
+    if (!device.enabled) {
+      return jsonResponse(401, { error: "Device disabled" });
+    }
 
-    const givenHash = await sha256Hex(device_secret);
-    if (givenHash !== dev.secret_hash) return jsonResponse(401, { error: "Invalid device_secret" });
+    // Compute fingerprint for deduplication
+    const receivedAt = body.received_at
+      ? new Date(body.received_at).toISOString()
+      : new Date().toISOString();
+    const fingerprintInput = `${momoCode}|${sender ?? ""}|${receivedAt}|${smsBody}`;
+    const fingerprint = await sha256Hex(fingerprintInput);
 
-    // Insert raw SMS first
-    const receivedAt = body.received_at ? new Date(body.received_at).toISOString() : new Date().toISOString();
+    // Check for duplicate (idempotency)
+    const { data: existing } = await supabase
+      .from("sms_messages")
+      .select("id, parse_status")
+      .eq("fingerprint", fingerprint)
+      .limit(1)
+      .single();
 
+    if (existing) {
+      // Duplicate detected - return OK (idempotent)
+      return jsonResponse(200, {
+        ok: true,
+        id: existing.id,
+        duplicate: true,
+        parse_status: existing.parse_status,
+        reason: "duplicate_fingerprint",
+      });
+    }
+
+    // Insert raw SMS
     const { data: inserted, error: insErr } = await supabase
       .from("sms_messages")
       .insert({
-        device_id,
-        device_label: body.device_label ?? dev.device_label ?? null,
+        momo_code: momoCode,
+        device_label: device.device_label ?? null,
         sim_slot: body.sim_slot ?? null,
         direction: "in",
-        sender: body.sender ?? null,
+        sender: sender,
         body: smsBody,
         received_at: receivedAt,
-        raw: body.raw ?? null,
-        meta: body.meta ?? null,
+        fingerprint: fingerprint,
         parse_status: "pending",
       })
       .select("id")
       .single();
 
-    if (insErr || !inserted?.id) return jsonResponse(500, { error: "Insert failed", details: insErr?.message ?? "unknown" });
+    if (insErr || !inserted?.id) {
+      return jsonResponse(500, {
+        error: "Insert failed",
+        details: insErr?.message ?? "unknown",
+      });
+    }
 
     const id = inserted.id as string;
 
-    // Parse + update same row
+    // Parse with Gemini
     try {
-      const { parsed, model_used } = await parseWithGemini({ sender: body.sender ?? null, body: smsBody });
+      const { parsed, model_used } = await parseWithGemini({
+        sender: sender,
+        body: smsBody,
+      });
 
       const ft_id = safeString((parsed as any).ft_id);
       const txn_id = safeString((parsed as any).txn_id);
-
-      // Dedup guard (avoid violating unique indexes if already present)
-      if (ft_id) {
-        const { data: dupe } = await supabase
-          .from("sms_messages")
-          .select("id")
-          .eq("ft_id", ft_id)
-          .neq("id", id)
-          .limit(1);
-        if (dupe && dupe.length > 0) {
-          await supabase.from("sms_messages").update({
-            parse_status: "skipped",
-            parse_error: "Duplicate ft_id detected",
-            meta: { ...(body.meta ?? {}), model_used, duplicate_of: dupe[0].id },
-          }).eq("id", id);
-          return jsonResponse(200, { ok: true, id, parse_status: "skipped", model_used, reason: "duplicate ft_id" });
-        }
-      }
-
       const transaction_time_raw = safeString((parsed as any).transaction_time_raw);
       const iso = parseKigaliTimestampToISO(transaction_time_raw);
 
@@ -263,31 +325,22 @@ Deno.serve(async (req) => {
         parse_status: "parsed",
         parse_error: null,
         parsed,
-
         provider: safeString((parsed as any).provider),
         txn_type: safeString((parsed as any).txn_type),
-
         currency: safeString((parsed as any).currency),
         amount: safeNumber((parsed as any).amount),
         balance: safeNumber((parsed as any).balance),
-
         counterparty: safeString((parsed as any).counterparty),
         counterparty_phone_suffix: safeString((parsed as any).counterparty_phone_suffix),
-
         reference: safeString((parsed as any).reference),
-
         txn_id,
         ft_id,
-
         fee: safeNumber((parsed as any).fee),
         fee_currency: safeString((parsed as any).fee_currency),
-
         transaction_time_raw,
         transaction_time: iso ? iso : null,
-
         wallet: safeString((parsed as any).wallet),
-
-        meta: { ...(body.meta ?? {}), model_used },
+        meta: { model_used },
       };
 
       await supabase.from("sms_messages").update(updatePatch).eq("id", id);
@@ -295,7 +348,10 @@ Deno.serve(async (req) => {
       return jsonResponse(200, { ok: true, id, parse_status: "parsed", model_used });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await supabase.from("sms_messages").update({ parse_status: "failed", parse_error: msg }).eq("id", id);
+      await supabase
+        .from("sms_messages")
+        .update({ parse_status: "failed", parse_error: msg })
+        .eq("id", id);
       return jsonResponse(200, { ok: true, id, parse_status: "failed", parse_error: msg });
     }
   } catch (e) {

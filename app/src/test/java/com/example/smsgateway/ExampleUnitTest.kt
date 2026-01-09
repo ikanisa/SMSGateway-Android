@@ -1,4 +1,4 @@
-package com.example.smsgateway
+package com.ikanisa.smsgateway
 
 import org.junit.Test
 

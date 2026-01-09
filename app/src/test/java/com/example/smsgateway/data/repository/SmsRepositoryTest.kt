@@ -1,9 +1,9 @@
-package com.example.smsgateway.data.repository
+package com.ikanisa.smsgateway.data.repository
 
-import com.example.smsgateway.data.Result
-import com.example.smsgateway.data.datasource.SupabaseApi
-import com.example.smsgateway.data.model.SmsMessage
-import com.example.smsgateway.data.model.SmsResponse
+import com.ikanisa.smsgateway.data.Result
+import com.ikanisa.smsgateway.data.datasource.SupabaseApi
+import com.ikanisa.smsgateway.data.model.SmsMessage
+import com.ikanisa.smsgateway.data.model.SmsResponse
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -20,7 +20,7 @@ class SmsRepositoryTest {
     private lateinit var repository: SmsRepositoryImpl
     private lateinit var mockApi: SupabaseApi
     private lateinit var mockContext: android.content.Context
-    private lateinit var mockSecurePreferences: com.example.smsgateway.data.SecurePreferences
+    private lateinit var mockSecurePreferences: com.ikanisa.smsgateway.data.SecurePreferences
     
     @Before
     fun setup() {

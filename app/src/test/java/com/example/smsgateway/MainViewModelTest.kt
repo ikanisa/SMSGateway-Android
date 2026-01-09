@@ -1,6 +1,6 @@
-package com.example.smsgateway
+package com.ikanisa.smsgateway
 
-import com.example.smsgateway.data.repository.SmsRepository
+import com.ikanisa.smsgateway.data.repository.SmsRepository
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow

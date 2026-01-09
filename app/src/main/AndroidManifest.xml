@@ -3,7 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -19,7 +18,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SMSGateway">
         <activity
-            android:name="com.example.smsgateway.MainActivity"
+            android:name="com.ikanisa.smsgateway.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,7 +28,7 @@
         </activity>
 
         <receiver
-            android:name="com.example.smsgateway.SmsReceiver"
+            android:name="com.ikanisa.smsgateway.SmsReceiver"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>

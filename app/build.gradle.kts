@@ -57,6 +57,8 @@ android {
                 "\"${localProperties.getProperty("supabase.url", "")}\"")
             buildConfigField("String", "SUPABASE_ANON_KEY", 
                 "\"${localProperties.getProperty("supabase.key", "")}\"")
+            buildConfigField("String", "MOMO_CODE", 
+                "\"${localProperties.getProperty("momo.code", "")}\"")
         }
         release {
             isMinifyEnabled = true
@@ -70,6 +72,8 @@ android {
                 "\"${localProperties.getProperty("supabase.url", "")}\"")
             buildConfigField("String", "SUPABASE_ANON_KEY", 
                 "\"${localProperties.getProperty("supabase.key", "")}\"")
+            buildConfigField("String", "MOMO_CODE", 
+                "\"${localProperties.getProperty("momo.code", "")}\"")
             // Use release signing if keystore exists, otherwise debug
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
@@ -129,9 +133,6 @@ dependencies {
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.analytics)
-    
-    // Security - Encrypted SharedPreferences
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     
     // Hilt - Dependency Injection
     implementation(libs.hilt.android)
