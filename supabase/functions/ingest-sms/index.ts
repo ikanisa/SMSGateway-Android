@@ -217,7 +217,6 @@ Deno.serve(async (req) => {
 
     // Filter 1: Check sender is in allowlist
     if (!isAllowedSender(sender)) {
-      // Log unknown sender for review (optional - could insert to unknown_senders table)
       return jsonResponse(200, {
         ok: true,
         skipped: true,
@@ -243,17 +242,28 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Check momo_code exists and is active
+    // Check momo_code exists and get device info with institution_id
     const { data: device, error: devErr } = await supabase
-      .from("devices")
-      .select("momo_code, device_label, enabled")
+      .from("sms_gateway_devices")
+      .select("id, institution_id, momo_code, device_name, status")
       .eq("momo_code", momoCode)
-      .single();
+      .single()
+      .catch(async () => {
+        // Fallback to devices table if sms_gateway_devices doesn't have it
+        return await supabase
+          .from("devices")
+          .select("id, momo_code, device_label")
+          .eq("momo_code", momoCode)
+          .single();
+      });
 
     if (devErr || !device) {
       return jsonResponse(401, { error: "Unknown or invalid momo_code" });
     }
-    if (!device.enabled) {
+    
+    // Check if device is enabled/active
+    const deviceEnabled = (device as any).status !== "disabled" && (device as any).status !== "inactive";
+    if (!deviceEnabled) {
       return jsonResponse(401, { error: "Device disabled" });
     }
 
@@ -264,13 +274,12 @@ Deno.serve(async (req) => {
     const fingerprintInput = `${momoCode}|${sender ?? ""}|${receivedAt}|${smsBody}`;
     const fingerprint = await sha256Hex(fingerprintInput);
 
-    // Check for duplicate (idempotency)
+    // Check for duplicate using sms_hash (idempotency)
     const { data: existing } = await supabase
-      .from("sms_messages")
+      .from("transactions")
       .select("id, parse_status")
-      .eq("fingerprint", fingerprint)
-      .limit(1)
-      .single();
+      .eq("sms_hash", fingerprint)
+      .maybeSingle();
 
     if (existing) {
       // Duplicate detected - return OK (idempotent)
@@ -279,23 +288,52 @@ Deno.serve(async (req) => {
         id: existing.id,
         duplicate: true,
         parse_status: existing.parse_status,
-        reason: "duplicate_fingerprint",
+        reason: "duplicate_sms_hash",
       });
     }
 
-    // Insert raw SMS
+    // Get institution_id from device (sms_gateway_devices has institution_id)
+    const institutionId = (device as any).institution_id ?? null;
+
+    // Insert raw SMS directly into transactions table
+    // This is the single point of entry - raw SMS goes here with raw_sms_text
     const { data: inserted, error: insErr } = await supabase
-      .from("sms_messages")
+      .from("transactions")
       .insert({
-        momo_code: momoCode,
-        device_label: device.device_label ?? null,
-        sim_slot: body.sim_slot ?? null,
-        direction: "in",
-        sender: sender,
-        body: smsBody,
+        // Raw SMS data (ONE column for raw MoMo SMS as requested)
+        raw_sms_text: smsBody,
+        
+        // SMS metadata
+        sender_phone: sender ?? null,
+        payer_phone: sender ?? null, // Same as sender_phone
         received_at: receivedAt,
-        fingerprint: fingerprint,
+        occurred_at: receivedAt, // Same as received_at for now
+        sms_hash: fingerprint, // For deduplication (unique constraint)
+        message_hash: fingerprint,
+        source: "MTN MoMo", // Only one source - MTN MoMo
+        momo_code: momoCode,
+        device_id: (device as any).id ?? null, // Device ID from sms_gateway_devices
+        
+        // Institution and parsing status
+        institution_id: institutionId,
         parse_status: "pending",
+        parse_attempts: 0,
+        
+        // Default values for transaction fields (will be updated after parsing)
+        channel: "momo",
+        type: null, // Will be set after parsing
+        amount: null, // Will be set after parsing
+        currency: null, // Will be set after parsing
+        status: "pending" as any,
+        
+        // Metadata
+        meta: body.sim_slot ? { 
+          sim_slot: body.sim_slot, 
+          device_name: (device as any).device_name ?? (device as any).device_label ?? null 
+        } : { 
+          device_name: (device as any).device_name ?? (device as any).device_label ?? null 
+        },
+        ingested_at: new Date().toISOString(),
       })
       .select("id")
       .single();
@@ -316,43 +354,108 @@ Deno.serve(async (req) => {
         body: smsBody,
       });
 
-      const ft_id = safeString((parsed as any).ft_id);
-      const txn_id = safeString((parsed as any).txn_id);
-      const transaction_time_raw = safeString((parsed as any).transaction_time_raw);
+      const ft_id = safeString(parsed.ft_id);
+      const txn_id = safeString(parsed.txn_id);
+      const transaction_time_raw = safeString(parsed.transaction_time_raw);
       const iso = parseKigaliTimestampToISO(transaction_time_raw);
 
+      const provider = safeString(parsed.provider) || "";
+      const txnType = safeString(parsed.txn_type);
+      const amount = safeNumber(parsed.amount);
+      const currency = safeString(parsed.currency) || "RWF";
+
+      // Update the SAME transaction record with parsed data
       const updatePatch: Record<string, unknown> = {
         parse_status: "parsed",
         parse_error: null,
-        parsed,
-        provider: safeString((parsed as any).provider),
-        txn_type: safeString((parsed as any).txn_type),
-        currency: safeString((parsed as any).currency),
-        amount: safeNumber((parsed as any).amount),
-        balance: safeNumber((parsed as any).balance),
-        counterparty: safeString((parsed as any).counterparty),
-        counterparty_phone_suffix: safeString((parsed as any).counterparty_phone_suffix),
-        reference: safeString((parsed as any).reference),
-        txn_id,
-        ft_id,
-        fee: safeNumber((parsed as any).fee),
-        fee_currency: safeString((parsed as any).fee_currency),
-        transaction_time_raw,
-        transaction_time: iso ? iso : null,
-        wallet: safeString((parsed as any).wallet),
-        meta: { model_used },
+        parse_attempts: 1,
+        parse_version: "1.0",
+        parse_confidence: safeNumber(parsed.confidence),
+
+        // Transaction details from parsed data
+        type: txnType,
+        amount: amount,
+        currency: currency,
+        momo_ref: txn_id,
+        momo_tx_id: txn_id,
+        
+        // Transaction metadata
+        payer_name: safeString(parsed.counterparty),
+        reference: safeString(parsed.reference),
+        occurred_at: iso ? iso : receivedAt, // Use parsed time if available
+        
+        // Additional parsed fields stored in meta
+        meta: {
+          ...(body.sim_slot ? { sim_slot: body.sim_slot } : {}),
+          device_label: device.device_label,
+          model_used,
+          parsed_data: {
+            provider,
+            ft_id,
+            balance: safeNumber(parsed.balance),
+            counterparty_phone_suffix: safeString(parsed.counterparty_phone_suffix),
+            fee: safeNumber(parsed.fee),
+            fee_currency: safeString(parsed.fee_currency),
+            wallet: safeString(parsed.wallet),
+            transaction_time_raw,
+            notes: safeString(parsed.notes),
+          },
+        },
       };
 
-      await supabase.from("sms_messages").update(updatePatch).eq("id", id);
+      // Update transaction status based on parsed data
+      if (amount && amount > 0 && txnType) {
+        updatePatch.status = "confirmed" as any;
+      }
 
-      return jsonResponse(200, { ok: true, id, parse_status: "parsed", model_used });
+      const { error: updateErr } = await supabase
+        .from("transactions")
+        .update(updatePatch)
+        .eq("id", id);
+
+      if (updateErr) {
+        console.error("Failed to update transaction with parsed data:", updateErr);
+        // Update parse status to failed if update fails
+        await supabase
+          .from("transactions")
+          .update({ parse_status: "failed", parse_error: updateErr.message })
+          .eq("id", id);
+        return jsonResponse(200, {
+          ok: true,
+          id,
+          parse_status: "failed",
+          parse_error: updateErr.message,
+        });
+      }
+
+      console.log(`Transaction ${id} parsed and updated successfully`);
+
+      return jsonResponse(200, {
+        ok: true,
+        id,
+        parse_status: "parsed",
+        model_used,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      console.error(`Parse error for transaction ${id}:`, msg);
+      
+      // Update transaction with parse error
       await supabase
-        .from("sms_messages")
-        .update({ parse_status: "failed", parse_error: msg })
+        .from("transactions")
+        .update({
+          parse_status: "failed",
+          parse_error: msg,
+          parse_attempts: 1,
+        })
         .eq("id", id);
-      return jsonResponse(200, { ok: true, id, parse_status: "failed", parse_error: msg });
+
+      return jsonResponse(200, {
+        ok: true,
+        id,
+        parse_status: "failed",
+        parse_error: msg,
+      });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
