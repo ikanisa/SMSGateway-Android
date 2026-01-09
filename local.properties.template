@@ -1,0 +1,11 @@
+# Local Properties Template
+# Copy this file to local.properties and fill in your values
+# local.properties is gitignored and will not be committed
+
+# Supabase Configuration
+# Get these from your Supabase project settings
+supabase.url=https://your-project-id.supabase.co
+supabase.key=your-anon-key-here
+
+# Note: These values are used to populate BuildConfig fields during build.
+# Never commit local.properties to version control.

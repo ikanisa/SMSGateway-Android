@@ -1,7 +1,7 @@
 package com.example.smsgateway
 
 import android.content.Context
-import android.content.SharedPreferences
+import com.example.smsgateway.data.SecurePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -16,8 +16,7 @@ import java.util.concurrent.TimeUnit
  */
 class DeviceLookupHelper(private val context: Context) {
 
-    private val prefs: SharedPreferences =
-        context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
+    private val prefs = SecurePreferences(context)
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -83,17 +82,15 @@ class DeviceLookupHelper(private val context: Context) {
                     supabaseUrl = json.optString("supabase_url", AppDefaults.SUPABASE_URL)
                 )
 
-                // Save to SharedPreferences
-                prefs.edit()
-                    .putString("supabase_url", deviceInfo.supabaseUrl)
-                    .putString("supabase_key", AppDefaults.SUPABASE_ANON_KEY)
-                    .putString("device_id", deviceInfo.deviceId)
-                    .putString("device_secret", deviceInfo.deviceSecret)
-                    .putString("device_label", deviceInfo.deviceLabel)
-                    .putString("momo_msisdn", deviceInfo.momoMsisdn)
-                    .putString("momo_code", momoCode)
-                    .putBoolean("is_provisioned", true)
-                    .apply()
+                // Save to SecurePreferences (encrypted storage)
+                prefs.setSupabaseUrl(deviceInfo.supabaseUrl)
+                prefs.setSupabaseKey(AppDefaults.SUPABASE_ANON_KEY)
+                prefs.setDeviceId(deviceInfo.deviceId)
+                prefs.setDeviceSecret(deviceInfo.deviceSecret)
+                prefs.setDeviceLabel(deviceInfo.deviceLabel)
+                prefs.setMomoMsisdn(deviceInfo.momoMsisdn)
+                prefs.setMomoCode(momoCode)
+                prefs.setProvisioned(true)
 
                 return@withContext LookupResult.Success(deviceInfo)
             }
@@ -106,24 +103,23 @@ class DeviceLookupHelper(private val context: Context) {
      * Check if device is already provisioned.
      */
     fun isProvisioned(): Boolean {
-        return prefs.getBoolean("is_provisioned", false) &&
-               prefs.getString("device_id", "")?.isNotEmpty() == true
+        return prefs.isProvisioned() && prefs.getDeviceId()?.isNotEmpty() == true
     }
 
     /**
-     * Get current device info from SharedPreferences.
+     * Get current device info from SecurePreferences.
      */
     fun getStoredDeviceInfo(): DeviceInfo? {
-        val deviceId = prefs.getString("device_id", "") ?: return null
+        val deviceId = prefs.getDeviceId() ?: return null
         if (deviceId.isEmpty()) return null
 
         return DeviceInfo(
             deviceId = deviceId,
-            deviceSecret = prefs.getString("device_secret", "") ?: "",
-            deviceLabel = prefs.getString("device_label", "") ?: "",
-            momoMsisdn = prefs.getString("momo_msisdn", "") ?: "",
-            momoCode = prefs.getString("momo_code", ""),
-            supabaseUrl = prefs.getString("supabase_url", AppDefaults.SUPABASE_URL) ?: AppDefaults.SUPABASE_URL
+            deviceSecret = prefs.getDeviceSecret() ?: "",
+            deviceLabel = prefs.getDeviceLabel() ?: "",
+            momoMsisdn = prefs.getMomoMsisdn() ?: "",
+            momoCode = prefs.getMomoCode(),
+            supabaseUrl = prefs.getSupabaseUrl() ?: AppDefaults.SUPABASE_URL
         )
     }
 
@@ -131,11 +127,9 @@ class DeviceLookupHelper(private val context: Context) {
      * Clear all stored credentials.
      */
     fun clearCredentials() {
-        prefs.edit()
-            .remove("device_id")
-            .remove("device_secret")
-            .remove("device_label")
-            .remove("is_provisioned")
-            .apply()
+        prefs.remove(SecurePreferences.KEY_DEVICE_ID)
+        prefs.remove(SecurePreferences.KEY_DEVICE_SECRET)
+        prefs.remove(SecurePreferences.KEY_DEVICE_LABEL)
+        prefs.setProvisioned(false)
     }
 }

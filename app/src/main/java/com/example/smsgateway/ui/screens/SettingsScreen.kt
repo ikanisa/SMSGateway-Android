@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.example.smsgateway.data.SecurePreferences
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,18 +60,14 @@ fun SettingsScreen(
     
     val deviceLookupHelper = remember { DeviceLookupHelper(context) }
     
+    val securePrefs = remember { SecurePreferences(context) }
+    
     // State for MoMo input
     var momoNumber by remember { 
-        mutableStateOf(
-            context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                .getString("momo_msisdn", "") ?: ""
-        ) 
+        mutableStateOf(securePrefs.getMomoMsisdn() ?: "")
     }
     var momoCode by remember { 
-        mutableStateOf(
-            context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-                .getString("momo_code", "") ?: ""
-        ) 
+        mutableStateOf(securePrefs.getMomoCode() ?: "")
     }
     var isLoading by remember { mutableStateOf(false) }
     var isProvisioned by remember { mutableStateOf(deviceLookupHelper.isProvisioned()) }

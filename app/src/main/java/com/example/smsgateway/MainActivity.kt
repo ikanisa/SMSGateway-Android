@@ -9,23 +9,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import dagger.hilt.android.AndroidEntryPoint
 import com.example.smsgateway.ui.screens.HomeScreen
 import com.example.smsgateway.ui.screens.SettingsScreen
 import com.example.smsgateway.ui.theme.SMSGatewayTheme
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModel()
 
     private var permissionCallback: ((Boolean) -> Unit)? = null
 
@@ -48,8 +51,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Set ViewModel reference for Worker logs
-        ProcessSmsWorker.setViewModel(viewModel)
+        // No longer needed - Worker uses Repository pattern instead of static ViewModel
 
         // Check if device is provisioned
         val deviceLookupHelper = DeviceLookupHelper(this)
@@ -66,8 +68,9 @@ class MainActivity : ComponentActivity() {
             SMSGatewayTheme {
                 val navController = rememberNavController()
                 val logs by viewModel.logs.observeAsState("")
-                val smsCount by viewModel.smsCount.observeAsState(0)
-                val errorCount by viewModel.errorCount.observeAsState(0)
+                // Use StateFlow from repository
+                val smsCount by viewModel.smsCount.collectAsState()
+                val errorCount by viewModel.errorCount.collectAsState()
                 val isListening by viewModel.isListening.observeAsState(false)
 
                 val isConfigured = remember(logs) {
@@ -165,9 +168,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isConfiguredCheck(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("SMSGatewayPrefs", Context.MODE_PRIVATE)
-        val devId = prefs.getString("device_id", "").orEmpty().trim()
-        val devSecret = prefs.getString("device_secret", "").orEmpty().trim()
+        val prefs = com.example.smsgateway.data.SecurePreferences(context)
+        val devId = prefs.getDeviceId()?.trim().orEmpty()
+        val devSecret = prefs.getDeviceSecret()?.trim().orEmpty()
         return devId.isNotEmpty() && devSecret.isNotEmpty()
     }
 }

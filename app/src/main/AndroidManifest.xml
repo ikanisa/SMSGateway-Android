@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".SmsGatewayApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -26,11 +27,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name="com.example.smsgateway.SettingsActivity"
-            android:exported="false"
-            android:parentActivityName="com.example.smsgateway.MainActivity" />
 
         <receiver
             android:name="com.example.smsgateway.SmsReceiver"

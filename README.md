@@ -24,7 +24,26 @@ An Android application that receives SMS messages and forwards them to a Supabas
 2. Add an Android app with package name `com.example.smsgateway`
 3. Download `google-services.json` and place it in `app/` directory
 
-### 2. Release Signing
+### 2. Supabase Configuration (Required)
+
+**SECURITY:** Supabase credentials are no longer hardcoded. You must provide them via `local.properties`.
+
+1. Copy the template file:
+   ```bash
+   cp local.properties.template local.properties
+   ```
+
+2. Edit `local.properties` and add your Supabase credentials:
+   ```properties
+   supabase.url=https://your-project-id.supabase.co
+   supabase.key=your-anon-key-here
+   ```
+
+3. **Important:** `local.properties` is gitignored and will not be committed. Never commit secrets to version control.
+
+4. These values are used to populate `BuildConfig` fields during build time.
+
+### 3. Release Signing
 
 To build release APKs, create a release keystore:
 
@@ -40,13 +59,15 @@ cp keystore.properties.template keystore.properties
 
 Edit `keystore.properties` with your keystore credentials.
 
-### 3. App Configuration
+### 4. App Configuration
+
+**Security Note:** All sensitive data (device secrets, API keys) are now stored using `EncryptedSharedPreferences` with Android Keystore encryption.
 
 Users must configure the following in the app's Settings screen:
-- Supabase URL
+- Supabase URL (or use device lookup by MoMo number)
 - Supabase Anon Key
-- Device ID
-- Device Secret
+- Device ID (fetched automatically via MoMo number lookup)
+- Device Secret (fetched automatically via MoMo number lookup)
 
 ## Building
 
@@ -75,6 +96,21 @@ The APK will be at `app/build/outputs/apk/release/app-release.apk`
      --groups "internal-testers"
    ```
 
+## Security
+
+### Credential Management
+
+- **Build-time secrets:** Supabase URL and key are loaded from `local.properties` into `BuildConfig` fields
+- **Runtime storage:** All sensitive data (device secrets, API keys) are encrypted using `EncryptedSharedPreferences` with Android Keystore
+- **No hardcoded secrets:** All credentials are externalized and never committed to version control
+
+### Secure Storage
+
+The app uses `SecurePreferences` wrapper around `EncryptedSharedPreferences`:
+- Keys encrypted with AES256-SIV
+- Values encrypted with AES256-GCM
+- Master key stored in Android Keystore (hardware-backed when available)
+
 ## Architecture
 
 ```
@@ -83,7 +119,9 @@ app/src/main/java/com/example/smsgateway/
 ├── MainViewModel.kt          # UI state management
 ├── SmsReceiver.kt            # BroadcastReceiver for SMS
 ├── ProcessSmsWorker.kt       # WorkManager worker for API calls
-├── AppDefaults.kt            # Default configuration
+├── AppDefaults.kt            # Default configuration (uses BuildConfig)
+├── data/
+│   └── SecurePreferences.kt # Encrypted storage wrapper
 └── ui/
     ├── screens/              # Compose screens
     ├── components/           # Reusable UI components
