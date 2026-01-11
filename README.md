@@ -1,140 +1,110 @@
 # SMS Gateway Android
 
-An Android application that receives SMS messages and forwards them to a Supabase Edge Function for parsing and storage using Gemini AI.
+A production-ready Android application that forwards SMS messages to a Supabase backend for processing.
 
 ## Features
 
-- 📱 Receives incoming SMS messages via BroadcastReceiver
-- 🔄 Background processing using WorkManager
-- 🤖 Gemini AI-powered SMS parsing (MoMo/banking transactions)
-- ☁️ Supabase backend integration
-- 🎨 Modern Material 3 UI with Jetpack Compose
+- 📱 **SMS Forwarding** - Automatically captures and forwards incoming SMS to backend
+- 🔐 **Secure Storage** - Uses EncryptedSharedPreferences for credentials
+- 🔄 **Offline Queue** - Queues SMS when offline, syncs when connected
+- 🔥 **Firebase Integration** - Crashlytics, Analytics, and Cloud Messaging
+- 🎨 **Modern UI** - Material 3 with glassmorphism components
+- ✅ **Tested** - 29+ unit tests with 80%+ coverage target
 
-## Setup
+## Quick Start
 
 ### Prerequisites
+- Android Studio Hedgehog (2023.1.1) or later
+- JDK 17
+- Android SDK 35
 
-- Android Studio Hedgehog or later
-- JDK 11+
-- Firebase project (for App Distribution)
+### Setup
 
-### 1. Firebase Configuration
-
-1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com)
-2. Add an Android app with package name `com.example.smsgateway`
-3. Download `google-services.json` and place it in `app/` directory
-
-### 2. Supabase Configuration (Required)
-
-**SECURITY:** Supabase credentials are no longer hardcoded. You must provide them via `local.properties`.
-
-1. Copy the template file:
+1. **Clone the repository**
    ```bash
-   cp local.properties.template local.properties
+   git clone https://github.com/ikanisa/SMSGateway-Android.git
+   cd SMSGateway-Android
    ```
 
-2. Edit `local.properties` and add your Supabase credentials:
+2. **Configure Firebase**
+   - Create a Firebase project at [Firebase Console](https://console.firebase.google.com)
+   - Download `google-services.json` and place it in `app/`
+
+3. **Configure Supabase**
+   - Create `local.properties` in the root directory:
    ```properties
-   supabase.url=https://your-project-id.supabase.co
-   supabase.key=your-anon-key-here
+   supabase.url=https://your-project.supabase.co
+   supabase.key=your-anon-key
+   momo.code=your-momo-code
    ```
 
-3. **Important:** `local.properties` is gitignored and will not be committed. Never commit secrets to version control.
-
-4. These values are used to populate `BuildConfig` fields during build time.
-
-### 3. Release Signing
-
-To build release APKs, create a release keystore:
-
-```bash
-keytool -genkey -v -keystore release.keystore -alias smsgateway -keyalg RSA -keysize 2048 -validity 10000
-```
-
-Then create `keystore.properties` at the project root (copy from template):
-
-```bash
-cp keystore.properties.template keystore.properties
-```
-
-Edit `keystore.properties` with your keystore credentials.
-
-### 4. App Configuration
-
-**Security Note:** All sensitive data (device secrets, API keys) are now stored using `EncryptedSharedPreferences` with Android Keystore encryption.
-
-Users must configure the following in the app's Settings screen:
-- Supabase URL (or use device lookup by MoMo number)
-- Supabase Anon Key
-- Device ID (fetched automatically via MoMo number lookup)
-- Device Secret (fetched automatically via MoMo number lookup)
-
-## Building
-
-### Debug Build
-
-```bash
-./gradlew assembleDebug
-```
-
-### Release Build
-
-```bash
-./gradlew assembleRelease
-```
-
-The APK will be at `app/build/outputs/apk/release/app-release.apk`
-
-## Firebase App Distribution
-
-1. Install Firebase CLI: `npm install -g firebase-tools`
-2. Login: `firebase login`
-3. Upload:
+4. **Build and Run**
    ```bash
-   firebase appdistribution:distribute app/build/outputs/apk/release/app-release.apk \
-     --app YOUR_FIREBASE_APP_ID \
-     --groups "internal-testers"
+   ./gradlew assembleDebug
    ```
-
-## Security
-
-### Credential Management
-
-- **Build-time secrets:** Supabase URL and key are loaded from `local.properties` into `BuildConfig` fields
-- **Runtime storage:** All sensitive data (device secrets, API keys) are encrypted using `EncryptedSharedPreferences` with Android Keystore
-- **No hardcoded secrets:** All credentials are externalized and never committed to version control
-
-### Secure Storage
-
-The app uses `SecurePreferences` wrapper around `EncryptedSharedPreferences`:
-- Keys encrypted with AES256-SIV
-- Values encrypted with AES256-GCM
-- Master key stored in Android Keystore (hardware-backed when available)
 
 ## Architecture
 
 ```
-app/src/main/java/com/example/smsgateway/
-├── MainActivity.kt          # Main entry point with Compose UI
-├── MainViewModel.kt          # UI state management
-├── SmsReceiver.kt            # BroadcastReceiver for SMS
-├── ProcessSmsWorker.kt       # WorkManager worker for API calls
-├── AppDefaults.kt            # Default configuration (uses BuildConfig)
+app/src/main/java/com/ikanisa/smsgateway/
 ├── data/
-│   └── SecurePreferences.kt # Encrypted storage wrapper
-└── ui/
-    ├── screens/              # Compose screens
-    ├── components/           # Reusable UI components
-    └── theme/                # Material 3 theming
+│   ├── model/          # Data classes
+│   ├── repository/     # Repository pattern
+│   └── datasource/     # API clients
+├── di/                 # Hilt dependency injection
+├── notification/       # FCM and SMS services
+├── ui/
+│   ├── components/     # Reusable UI components
+│   ├── screens/        # Compose screens
+│   └── theme/          # Material 3 theming
+├── workers/            # WorkManager background tasks
+├── MainActivity.kt
+├── MainViewModel.kt
+└── SmsGatewayApplication.kt
 ```
 
-## Backend
+## Testing
 
-The Supabase Edge Function (`supabase/functions/ingest-sms/`) handles:
-- Device authentication
-- SMS storage
-- Gemini AI parsing for transaction extraction
+Run unit tests:
+```bash
+./gradlew testDebugUnitTest
+```
+
+Run with coverage:
+```bash
+./gradlew testDebugUnitTestCoverage
+```
+
+## CI/CD
+
+The project uses GitHub Actions for continuous integration:
+
+| Workflow | Trigger | Actions |
+|----------|---------|---------|
+| `android-ci.yml` | Push to main/develop | Run tests, Build APK, Deploy to Firebase |
+
+### Required Secrets
+
+Configure these in GitHub repository settings:
+
+| Secret | Description |
+|--------|-------------|
+| `GOOGLE_SERVICES_JSON` | Contents of google-services.json |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Supabase anon key |
+| `KEYSTORE_BASE64` | Base64-encoded release keystore |
+| `KEYSTORE_PASSWORD` | Keystore password |
+| `KEY_ALIAS` | Key alias |
+| `KEY_PASSWORD` | Key password |
+| `FIREBASE_APP_ID` | Firebase App ID |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase service account JSON |
+
+## Release
+
+1. Update version in `app/build.gradle.kts`
+2. Push to `main` branch
+3. CI/CD automatically builds and deploys to Firebase App Distribution
 
 ## License
 
-Proprietary - Internal use only
+Copyright © 2024 Ikanisa. All rights reserved.
