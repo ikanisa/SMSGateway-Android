@@ -3,6 +3,7 @@ package com.ikanisa.smsgateway.notification
 import android.content.Context
 import android.telephony.SmsManager
 import android.util.Log
+import com.ikanisa.smsgateway.data.Result
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,7 +26,7 @@ class SmsNotificationService @Inject constructor(
     suspend fun sendSms(phoneNumber: String, message: String): Result<Unit> {
         return try {
             if (phoneNumber.isBlank() || message.isBlank()) {
-                return Result.failure(IllegalArgumentException("Phone number and message cannot be empty"))
+                return Result.Error("Phone number and message cannot be empty")
             }
             
             // Split message if it's too long (SMS limit is 160 chars per part)
@@ -38,10 +39,10 @@ class SmsNotificationService @Inject constructor(
             }
             
             Log.d(TAG, "SMS sent successfully to $phoneNumber")
-            Result.success(Unit)
+            Result.Success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send SMS to $phoneNumber", e)
-            Result.failure(e)
+            Result.Error(e.message ?: "Unknown error", e)
         }
     }
     

@@ -1,8 +1,6 @@
 package com.ikanisa.smsgateway.di
 
 import android.content.Context
-import androidx.hilt.work.HiltWorkerFactory
-import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.ikanisa.smsgateway.data.datasource.NotificationApi
 import com.ikanisa.smsgateway.data.repository.NotificationRepository
@@ -58,14 +56,6 @@ object RepositoryModule {
     @Singleton
     fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
         return WorkManager.getInstance(context)
-    }
-    
-    @Provides
-    @Singleton
-    fun provideHiltWorkerFactory(
-        @ApplicationContext context: Context
-    ): HiltWorkerFactory {
-        return HiltWorkerFactory(context)
     }
     
     @Provides
