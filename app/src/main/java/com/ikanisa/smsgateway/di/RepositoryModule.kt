@@ -71,4 +71,13 @@ object RepositoryModule {
     fun provideFcmTokenRegistrationService(): com.ikanisa.smsgateway.notification.FcmTokenRegistrationService {
         return com.ikanisa.smsgateway.notification.FcmTokenRegistrationService()
     }
+    
+    @Provides
+    @Singleton
+    fun provideActivationRepository(
+        @ApplicationContext context: Context,
+        supabaseClient: io.github.jan.supabase.SupabaseClient
+    ): com.ikanisa.smsgateway.data.repository.ActivationRepository {
+        return com.ikanisa.smsgateway.data.repository.ActivationRepositoryImpl(context, supabaseClient)
+    }
 }
