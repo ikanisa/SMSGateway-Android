@@ -196,7 +196,7 @@ jobs:
         with:
           appId: ${{ secrets.FIREBASE_APP_ID }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          groups: testers
+          groups: staff
           file: app-release.apk
           releaseNotes: |
             🚀 Automated release from commit ${{ github.sha }}
