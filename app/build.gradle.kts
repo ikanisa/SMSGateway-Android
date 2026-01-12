@@ -62,8 +62,10 @@ android {
                 "\"${localProperties.getProperty("momo.code", "")}\"")
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // TEMPORARILY DISABLED: R8 minification was causing app crashes
+            // TODO: Re-enable after proper R8 configuration
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
