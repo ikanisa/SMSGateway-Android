@@ -3,6 +3,7 @@ package com.ikanisa.smsgateway.notification
 import androidx.work.*
 import com.ikanisa.smsgateway.workers.BalanceNotificationWorker
 import com.ikanisa.smsgateway.workers.DailyReminderWorker
+import com.ikanisa.smsgateway.workers.SmsSyncWorker
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -115,5 +116,39 @@ class NotificationScheduler @Inject constructor(
             .build()
         
         workManager.enqueue(balanceNotificationWork)
+    }
+    
+    /**
+     * Schedule periodic SMS sync to flush offline queue.
+     * Runs every 15 minutes when network is available.
+     */
+    fun scheduleSmsSyncWork() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true)
+            .build()
+        
+        val smsSyncWork = PeriodicWorkRequestBuilder<SmsSyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .addTag(SmsSyncWorker.TAG)
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                WorkRequest.MIN_BACKOFF_MILLIS,
+                TimeUnit.MILLISECONDS
+            )
+            .build()
+        
+        workManager.enqueueUniquePeriodicWork(
+            SmsSyncWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP, // Don't replace if already running
+            smsSyncWork
+        )
+    }
+    
+    /**
+     * Cancel periodic SMS sync work.
+     */
+    fun cancelSmsSyncWork() {
+        workManager.cancelUniqueWork(SmsSyncWorker.WORK_NAME)
     }
 }

@@ -50,6 +50,14 @@ class SmsGatewayApplication : Application(), Configuration.Provider {
             Timber.e(e, "Failed to schedule daily reminders")
         }
         
+        // Initialize periodic SMS sync to flush offline queue
+        try {
+            notificationScheduler.scheduleSmsSyncWork()
+            Timber.d("SMS sync worker scheduled (every 15 minutes)")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to schedule SMS sync worker")
+        }
+        
         // Initialize Firebase Cloud Messaging token registration
         initializeFcmToken()
     }
