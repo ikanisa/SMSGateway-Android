@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.google.services)
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.ksp)
 }
 
 // Load keystore properties if available
@@ -60,6 +61,8 @@ android {
                 "\"${localProperties.getProperty("supabase.key", "")}\"")
             buildConfigField("String", "MOMO_CODE", 
                 "\"${localProperties.getProperty("momo.code", "")}\"")
+            // Security: Release signature hash for tamper detection (DEBUG)
+            buildConfigField("String", "RELEASE_SIGNATURE_HASH", "\"DEBUG\"")
         }
         release {
             // TEMPORARILY DISABLED: R8 minification was causing app crashes
@@ -77,6 +80,9 @@ android {
                 "\"${localProperties.getProperty("supabase.key", "")}\"")
             buildConfigField("String", "MOMO_CODE", 
                 "\"${localProperties.getProperty("momo.code", "")}\"")
+            // Security: Release signature hash for tamper detection
+            buildConfigField("String", "RELEASE_SIGNATURE_HASH", 
+                "\"${localProperties.getProperty("release.signature.hash", "")}\"")
             // Use release signing if keystore exists, otherwise debug
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
@@ -96,6 +102,11 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+// Room schema export directory
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -122,6 +133,7 @@ dependencies {
     
     // OkHttp for networking
     implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
     
     // Gson for JSON parsing
     implementation(libs.gson)
@@ -154,12 +166,31 @@ dependencies {
     implementation("androidx.hilt:hilt-work:1.1.0")
     kapt("androidx.hilt:hilt-compiler:1.1.0")
     
+    // Room Database - Offline-first storage
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    
+    // Database Encryption
+    implementation(libs.sqlcipher)
+    implementation(libs.sqlite.ktx)
+    
+    // Security
+    implementation(libs.security.crypto)
+    implementation(libs.biometric)
+    
+    // Logging
+    implementation(libs.timber)
+    
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation(libs.room.testing)
+    testImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.room.testing)
 }

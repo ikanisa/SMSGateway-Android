@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -34,13 +35,19 @@ class SmsGatewayApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         
+        // Initialize Timber for logging
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
+        Timber.i("SMS Gateway Application started")
+        
         // Initialize daily reminder scheduling (default: 9:00 AM)
         // This can be configured via settings later
         try {
             notificationScheduler.scheduleDailyReminders(hour = 9, minute = 0)
-            Log.d("SmsGatewayApplication", "Daily reminders scheduled for 9:00 AM")
+            Timber.d("Daily reminders scheduled for 9:00 AM")
         } catch (e: Exception) {
-            Log.e("SmsGatewayApplication", "Failed to schedule daily reminders", e)
+            Timber.e(e, "Failed to schedule daily reminders")
         }
         
         // Initialize Firebase Cloud Messaging token registration
@@ -51,27 +58,27 @@ class SmsGatewayApplication : Application(), Configuration.Provider {
         try {
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 if (!task.isSuccessful) {
-                    Log.w("SmsGatewayApplication", "Failed to get FCM token", task.exception)
+                    Timber.w(task.exception, "Failed to get FCM token")
                     return@addOnCompleteListener
                 }
                 
                 val token = task.result
-                Log.d("SmsGatewayApplication", "FCM token obtained: ${token.take(20)}...")
+                Timber.d("FCM token obtained: ${token.take(20)}...")
                 
                 // Register token with Supabase
                 applicationScope.launch {
                     when (val result = fcmTokenRegistrationService.registerToken(token)) {
                         is com.ikanisa.smsgateway.data.Result.Success -> {
-                            Log.d("SmsGatewayApplication", "FCM token registered with Supabase")
+                            Timber.d("FCM token registered with Supabase")
                         }
                         is com.ikanisa.smsgateway.data.Result.Error -> {
-                            Log.e("SmsGatewayApplication", "Failed to register FCM token: ${result.message}")
+                            Timber.e("Failed to register FCM token: ${result.message}")
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("SmsGatewayApplication", "Error initializing FCM", e)
+            Timber.e(e, "Error initializing FCM")
         }
     }
     
