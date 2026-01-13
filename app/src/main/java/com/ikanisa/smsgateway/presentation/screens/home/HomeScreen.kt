@@ -245,7 +245,7 @@ private fun MessageCard(
     
     LiquidGlassCard(
         onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.Click)
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onClick()
         }
     ) {

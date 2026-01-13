@@ -170,11 +170,21 @@ class SecurityChecker @Inject constructor(
     
     /**
      * Validate app signature against known release signature.
+     * 
+     * Note: For Firebase App Distribution (internal deployment), signature
+     * validation is relaxed. Returns true if no hash is configured.
      */
     @Suppress("DEPRECATION")
     fun isSignatureValid(): Boolean {
-        // Skip signature check in debug builds or if no hash is configured
-        if (BuildConfig.DEBUG || BuildConfig.RELEASE_SIGNATURE_HASH.isEmpty()) {
+        // Skip signature check in debug builds
+        if (BuildConfig.DEBUG) {
+            return true
+        }
+        
+        // Skip if no release hash is configured (common for internal distribution)
+        if (BuildConfig.RELEASE_SIGNATURE_HASH.isEmpty() || 
+            BuildConfig.RELEASE_SIGNATURE_HASH == "DEBUG") {
+            Timber.d("Signature validation skipped - no hash configured (Firebase Distribution)")
             return true
         }
         

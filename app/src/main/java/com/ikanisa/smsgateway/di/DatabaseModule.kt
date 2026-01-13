@@ -27,13 +27,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     
-    @Provides
-    @Singleton
-    fun provideSecurePreferences(
-        @ApplicationContext context: Context
-    ): SecurePreferences {
-        return SecurePreferences(context)
-    }
+    // Note: SecurePreferences is provided by SecurityModule
     
     @Provides
     @Singleton

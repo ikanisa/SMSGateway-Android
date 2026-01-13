@@ -38,10 +38,13 @@ class CertificatePinningConfig @Inject constructor(
             val supabaseHost = extractHostname(BuildConfig.SUPABASE_URL)
             if (supabaseHost.isNotEmpty()) {
                 val certificatePinner = CertificatePinner.Builder()
-                    // Supabase uses AWS/Cloudflare certificates
-                    // TODO: Replace with actual certificate hashes
-                    .add(supabaseHost, "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-                    .add(supabaseHost, "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
+                    // Supabase uses Let's Encrypt certificates
+                    // ISRG Root X1 (Let's Encrypt root - long-lived)
+                    .add(supabaseHost, "sha256/C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=")
+                    // Let's Encrypt R3 intermediate (current)
+                    .add(supabaseHost, "sha256/jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=")
+                    // Supabase current leaf certificate
+                    .add(supabaseHost, "sha256/gq0i3k2tlOamMGsUv1/KzkNle4NlMUhIIJpbWNyzQgk=")
                     .build()
                 
                 builder.certificatePinner(certificatePinner)

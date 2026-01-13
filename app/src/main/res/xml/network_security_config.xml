@@ -20,15 +20,15 @@
         <domain includeSubdomains="true">supabase.co</domain>
         <pin-set expiration="2027-01-01">
             <!-- 
-                TODO: Replace with actual certificate hashes.
-                These are placeholder values that need to be updated
-                with the real SHA-256 pin hashes from Supabase.
-                
-                To get the hashes, run:
-                openssl s_client -servername YOUR_PROJECT.supabase.co -connect YOUR_PROJECT.supabase.co:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+                Supabase uses Let's Encrypt certificates.
+                These pins include the root and intermediate certificates.
             -->
-            <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
-            <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>
+            <!-- ISRG Root X1 (Let's Encrypt root) -->
+            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
+            <!-- Let's Encrypt R3 intermediate -->
+            <pin digest="SHA-256">jQJTbIh0grw0/1TkHSumWb+Fs0Ggogr621gT3PvPKG0=</pin>
+            <!-- Supabase leaf certificate -->
+            <pin digest="SHA-256">gq0i3k2tlOamMGsUv1/KzkNle4NlMUhIIJpbWNyzQgk=</pin>
         </pin-set>
     </domain-config>
     

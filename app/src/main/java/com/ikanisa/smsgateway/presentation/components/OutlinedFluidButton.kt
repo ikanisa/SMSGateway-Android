@@ -2,6 +2,7 @@ package com.ikanisa.smsgateway.presentation.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,13 +32,15 @@ import androidx.compose.ui.unit.dp
 import com.ikanisa.smsgateway.presentation.theme.AppAnimations
 import com.ikanisa.smsgateway.presentation.theme.AppGradients
 
+/**
+ * An outlined button variant with gradient border and transparent background.
+ */
 @Composable
-fun FluidButton(
+fun OutlinedFluidButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    loading: Boolean = false,
     gradient: Brush = AppGradients.PrimaryGradient,
     icon: ImageVector? = null
 ) {
@@ -57,49 +59,44 @@ fun FluidButton(
             .scale(scale)
             .height(56.dp)
             .background(
-                brush = if (enabled) gradient else Brush.horizontalGradient(
-                    listOf(Color.Gray, Color.DarkGray)
-                ),
+                color = Color.Transparent,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .border(
+                width = 2.dp,
+                brush = gradient,
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                enabled = enabled && !loading,
+                enabled = enabled,
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onClick()
                 }
             )
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = Color.White,
-                strokeWidth = 2.dp
-            )
-        } else {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                icon?.let {
-                    Icon(
-                        imageVector = it,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            icon?.let {
+                Icon(
+                    imageVector = it,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (enabled) MaterialTheme.colorScheme.primary else Color.Gray,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

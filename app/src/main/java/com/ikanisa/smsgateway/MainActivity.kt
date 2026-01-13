@@ -85,32 +85,8 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
 
         setContent {
-            // Theme state - can be overridden by user
-            val systemDarkTheme = isSystemInDarkTheme()
-            var isDarkTheme by rememberSaveable { mutableStateOf(true) } // Default to dark
-            
-            // Navigation state
-            var currentDestination by rememberSaveable { mutableStateOf(NavDestination.HOME) }
-            
-            SMSGatewayTheme(darkTheme = isDarkTheme) {
-                val logs by viewModel.logs.observeAsState("")
-                val smsCount by viewModel.smsCount.collectAsState()
-                val errorCount by viewModel.errorCount.collectAsState()
-                val isListening by viewModel.isListening.observeAsState(false)
-
-                SMSGatewayApp(
-                    viewModel = viewModel,
-                    context = this@MainActivity,
-                    logs = logs ?: "",
-                    smsCount = smsCount ?: 0,
-                    errorCount = errorCount ?: 0,
-                    isListening = isListening ?: false,
-                    isDarkTheme = isDarkTheme,
-                    onThemeToggle = { isDarkTheme = !isDarkTheme },
-                    currentDestination = currentDestination,
-                    onDestinationChange = { currentDestination = it }
-                )
-            }
+            // Use the new Modern UI with Liquid Glass design
+            com.ikanisa.smsgateway.presentation.ModernSMSGatewayApp()
         }
     }
 
