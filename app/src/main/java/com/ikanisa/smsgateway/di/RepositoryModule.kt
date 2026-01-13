@@ -3,6 +3,9 @@ package com.ikanisa.smsgateway.di
 import android.content.Context
 import androidx.work.WorkManager
 import com.ikanisa.smsgateway.data.datasource.NotificationApi
+import com.ikanisa.smsgateway.data.datasource.SupabaseApi
+import com.ikanisa.smsgateway.data.local.dao.DeviceDao
+import com.ikanisa.smsgateway.data.local.dao.SmsDao
 import com.ikanisa.smsgateway.data.repository.NotificationRepository
 import com.ikanisa.smsgateway.data.repository.NotificationRepositoryImpl
 import com.ikanisa.smsgateway.data.repository.SmsRepository
@@ -25,8 +28,19 @@ object RepositoryModule {
     
     @Provides
     @Singleton
-    fun provideSmsRepository(): SmsRepository {
-        return SmsRepositoryImpl()
+    fun provideSupabaseApi(): SupabaseApi {
+        return SupabaseApi()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSmsRepository(
+        smsDao: SmsDao,
+        deviceDao: DeviceDao,
+        supabaseApi: SupabaseApi,
+        @ApplicationContext context: Context
+    ): SmsRepository {
+        return SmsRepositoryImpl(smsDao, deviceDao, supabaseApi, context)
     }
     
     @Provides
