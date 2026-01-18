@@ -100,6 +100,15 @@ class MainActivity : ComponentActivity() {
                 permissions.add(Manifest.permission.RECEIVE_SMS)
             }
 
+            // Android 13+ requires POST_NOTIFICATIONS permission for foreground notifications
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED
+                ) {
+                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
             if (permissions.isNotEmpty()) {
                 requestPermissionLauncher.launch(permissions.toTypedArray())
             } else {
