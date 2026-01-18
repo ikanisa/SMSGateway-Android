@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.firebase.appdistribution)
 }
 
 // Load keystore properties if available
@@ -88,6 +89,12 @@ android {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
+            }
+            
+            firebaseAppDistribution {
+                appId = "1:1062053024700:android:bb636e0e9e75ebd3fe11b9"
+                groups = "testers"
+                artifactType = "APK"
             }
         }
     }
